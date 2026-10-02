@@ -228,7 +228,7 @@ class LiveFootstepDetector:
             elapsed = time.perf_counter() - loop_start
             time.sleep(max(0.005, self.hop_seconds - elapsed))
 
-        print(f"\n[INFO] Simulation finished. Steps: {self.total_events} | Claps: {self.total_claps} | Knocks: {self.total_knocks}\n")
+        print(f"\n[INFO] Simulation finished. Verified footsteps: {self.total_events} | Non-footstep sounds: {self.event_detector.total_non_footsteps if self.is_multiclass else 'N/A'}\n")
 
     def _process_latest_window(self, timestamp: Optional[float] = None):
         """Processes the current ring buffer window through model and temporal validator."""
@@ -293,14 +293,6 @@ class LiveFootstepDetector:
                 print(f"Total Footsteps:  {self.total_events}")
                 print("=" * 65 + "\n")
 
-            elif ev_type == "CLAP":
-                self.total_claps += 1
-                print(f"\n[CLAP]   Hand clap rejected from footstep alarms (Conf: {conf*100:.1f}%, RMS: {rms:.4f})")
-
-            elif ev_type == "KNOCK":
-                self.total_knocks += 1
-                print(f"\n[KNOCK]  Knock / Rap rejected from footstep alarms (Conf: {conf*100:.1f}%, RMS: {rms:.4f})")
-
             # Write event to log
             with open(self.event_log_path, "a") as f:
                 f.write(f"{now:.4f},{time_str},{ev_type},{conf:.4f},{probs[1]:.4f},{probs[2]:.4f},{probs[3]:.4f},{probs[0]:.4f},{rms:.5f},{event.get('notes', '')}\n")
@@ -310,9 +302,9 @@ class LiveFootstepDetector:
                 fpath = self.debug_audio_dir / fname
                 sf.write(str(fpath), audio_window, self.sample_rate)
 
-        # Real-Time Visual Display
+        # Real-Time Visual Display (Footstep vs Non-Footstep)
         if self.is_multiclass:
-            log_line = self.event_detector.format_log_line(now, probs, rms, label_str)
+            log_line = self.event_detector.format_log_line(now, probs, rms, label_str, debug=self.debug_mode)
             print(log_line, end="\r", flush=True)
         else:
             bar_len = int(probs[1] * 20)
@@ -338,11 +330,12 @@ class LiveFootstepDetector:
                 dev_name = devices[default_in]["name"]
 
         print("\n" + "=" * 70)
-        print("REAL-TIME LIVE FOOTSTEP & TRANSIENT DETECTOR")
+        print("REAL-TIME LIVE FOOTSTEP DETECTOR (FOOTSTEP vs NON-FOOTSTEP)")
         print("=" * 70)
         print(f"Microphone:    {dev_name} (ID: {chosen_device})")
         print(f"Sample Rate:   {self.sample_rate} Hz (Mono)")
-        print(f"Model:         {self.model_path.name} ({'4-Class MultiClassAudioNet' if self.is_multiclass else 'Binary CNN'})")
+        print(f"Model:         {self.model_path.name}")
+        print(f"Classes:       FOOTSTEP vs NON_FOOTSTEP (Claps & Knocks combined into Non-Footstep)")
         print(f"Step Thresh:   {self.threshold:.2f}")
         print(f"Cadence Check: {'ACTIVE (Requires multiple walking steps spaced 0.25s-0.85s)' if self.require_cadence else 'OFF'}")
         print(f"Max AGC Gain:  +{20.0 * np.log10(self.max_gain_boost):.1f} dB")
@@ -379,7 +372,7 @@ class LiveFootstepDetector:
         start_time = time.time()
 
         with stream:
-            logger.info("Microphone active! Distinguishing Footsteps vs Claps vs Knocks... (Press Ctrl+C to stop)")
+            logger.info("Microphone active! Distinguishing Footsteps vs Non-Footstep sounds... (Press Ctrl+C to stop)")
             time.sleep(self.hop_seconds * 2)
 
             try:
@@ -396,7 +389,7 @@ class LiveFootstepDetector:
             except KeyboardInterrupt:
                 print("\n[INFO] Stopped by user.")
 
-        print(f"\n[INFO] Live detector finished. Verified footsteps: {self.total_events} | Claps: {self.total_claps} | Knocks: {self.total_knocks}")
+        print(f"\n[INFO] Live detector finished. Verified footsteps: {self.total_events} | Non-footstep sounds: {self.event_detector.total_non_footsteps if self.is_multiclass else 'N/A'}")
 
 
 def main():

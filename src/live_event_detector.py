@@ -141,6 +141,7 @@ class MultiClassTemporalDetector:
         self.smoothed_step_prob: float = 0.0
 
         self.total_footsteps = 0
+        self.total_non_footsteps = 0
         self.total_claps = 0
         self.total_knocks = 0
 
@@ -152,11 +153,13 @@ class MultiClassTemporalDetector:
     ) -> Tuple[Optional[Dict[str, Any]], str]:
         """
         Processes new window probabilities: probs = [p_other, p_step, p_clap, p_knock]
+        Combines other, clap, and knock as NON_FOOTSTEP.
         Returns:
             (event_dict_or_None, decision_label_str)
         """
         now = timestamp if timestamp is not None else time.time()
         p_other, p_step, p_clap, p_knock = float(probs[0]), float(probs[1]), float(probs[2]), float(probs[3])
+        p_non_step = float(p_other + p_clap + p_knock)
 
         # 1. Update Exponential Moving Average for step probability
         if len(self.history) == 0:
@@ -166,11 +169,12 @@ class MultiClassTemporalDetector:
 
         # 2. Determine instant winner class for this window
         max_idx = int(np.argmax(probs))
-        winner_class = ["OTHER", "FOOTSTEP", "CLAP", "KNOCK"][max_idx]
+        winner_class = ["NON_FOOTSTEP", "FOOTSTEP", "NON_FOOTSTEP", "NON_FOOTSTEP"][max_idx]
 
         self.history.append({
             "probs": probs,
             "p_step": p_step,
+            "p_non_step": p_non_step,
             "p_clap": p_clap,
             "p_knock": p_knock,
             "time": now,
@@ -181,37 +185,20 @@ class MultiClassTemporalDetector:
         time_since_last = now - self.last_event_time
         in_cooldown = (time_since_last < self.cooldown_sec)
 
-        # 3. Check for CLAP (sharp broadband percussive impact)
-        if p_clap >= self.clap_threshold and p_clap > p_step and p_clap > p_knock:
-            if not in_cooldown or self.last_event_type != "CLAP":
-                self.last_event_time = now
-                self.last_event_type = "CLAP"
+        # 3. Check for CLAP or KNOCK transient impacts (Active Non-Footstep Suppression)
+        is_clap = (p_clap >= self.clap_threshold and p_clap > p_step)
+        is_knock = (p_knock >= self.knock_threshold and p_knock > p_step)
+
+        if is_clap or is_knock:
+            self.total_non_footsteps += 1
+            if is_clap:
                 self.total_claps += 1
-                return {
-                    "event_type": "CLAP",
-                    "timestamp": round(now, 4),
-                    "confidence": round(p_clap, 4),
-                    "rms": round(rms, 5),
-                    "notes": "Sharp broadband hand clap"
-                }, "CLAP"
-            return None, "CLAP"
-
-        # 4. Check for KNOCK (mid-frequency wooden resonance)
-        if p_knock >= self.knock_threshold and p_knock > p_step and p_knock > p_clap:
-            if not in_cooldown or self.last_event_type != "KNOCK":
-                self.last_event_time = now
-                self.last_event_type = "KNOCK"
+            if is_knock:
                 self.total_knocks += 1
-                return {
-                    "event_type": "KNOCK",
-                    "timestamp": round(now, 4),
-                    "confidence": round(p_knock, 4),
-                    "rms": round(rms, 5),
-                    "notes": "Resonant knuckle / door impact"
-                }, "KNOCK"
-            return None, "KNOCK"
+            self.last_event_type = "NON_FOOTSTEP"
+            return None, "NON_FOOTSTEP"
 
-        # 5. Check for FOOTSTEP candidate
+        # 4. Check for FOOTSTEP candidate
         is_step_candidate = (p_step >= self.step_threshold and p_step > p_clap and p_step > p_knock)
 
         if is_step_candidate:
@@ -265,11 +252,13 @@ class MultiClassTemporalDetector:
                     "notes": "Direct threshold trigger"
                 }, "FOOTSTEP"
 
+        self.total_non_footsteps += 1
         return None, "NON_FOOTSTEP"
 
-    def format_log_line(self, now: float, probs: np.ndarray, rms: float, decision_label: str) -> str:
+    def format_log_line(self, now: float, probs: np.ndarray, rms: float, decision_label: str, debug: bool = False) -> str:
         """Returns formatted diagnostic line for real-time terminal display."""
-        p_other, p_step, p_clap, p_knock = probs[0], probs[1], probs[2], probs[3]
+        p_other, p_step, p_clap, p_knock = float(probs[0]), float(probs[1]), float(probs[2]), float(probs[3])
+        p_non_step = float(p_other + p_clap + p_knock)
         time_str = time.strftime("%H:%M:%S", time.localtime(now)) + f".{int((now % 1) * 100):02d}"
 
         # Visual confidence bar for footstep probability
@@ -277,8 +266,14 @@ class MultiClassTemporalDetector:
         fill = int(round(p_step * bar_len))
         bar = "#" * fill + "-" * (bar_len - fill)
 
-        return (
-            f"[{time_str}] [{bar}] Step: {p_step:.2f} (Smooth: {self.smoothed_step_prob:.2f}) | "
-            f"Clap: {p_clap:.2f} | Knock: {p_knock:.2f} | Other: {p_other:.2f} | "
-            f"RMS: {rms:.4f} | {decision_label}"
-        )
+        if debug:
+            return (
+                f"[{time_str}] [{bar}] Step: {p_step:.2f} (Smooth: {self.smoothed_step_prob:.2f}) | "
+                f"Non-Step: {p_non_step:.2f} (Clap: {p_clap:.2f}, Knock: {p_knock:.2f}, Other: {p_other:.2f}) | "
+                f"RMS: {rms:.4f} | {decision_label}"
+            )
+        else:
+            return (
+                f"[{time_str}] [{bar}] Step: {p_step:.2f} (Smooth: {self.smoothed_step_prob:.2f}) | "
+                f"Non-Step: {p_non_step:.2f} | RMS: {rms:.4f} | {decision_label}"
+            )
