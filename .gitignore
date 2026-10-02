@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+
+# PyTorch checkpoints and large binaries
+*.pt
+*.pth
+*.onnx
+checkpoints/*.pth
+checkpoints/*.pt
+
+# Audio & Temporary files
+recordings/
+*.swp
+*.bak
+*.tmp
+
+# Logs & IDE
+logs/
+*.sqlite3
+.idea/
+.vscode/
+.DS_Store
+
+# Artifacts
+.system_generated/
+
+# Aider Studio (auto-added)
+REPO_MAP.md
+.aider/
+
+# Large raw datasets & audio corpora
+dataset/
+dataset_v2/
+dataset_v3/
+esc50/
+test_audio/
+
+# Generated reports / plots
+reports/
+
+# Models (large binary weights)
+models/*.pth
+models/*.pt
+
+# Kombai
+.kombai/
